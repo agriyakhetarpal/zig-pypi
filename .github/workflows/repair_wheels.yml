@@ -1,0 +1,62 @@
+name: Repair wheels
+
+on:
+  pull_request:
+
+jobs:
+  construct_and_repair_wheels:
+    name: Wheels (${{ matrix.os}})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: |
+          python -m pip install wheel
+          python -m pip install -e .
+
+      - name: Run build command for Linux and macOS
+        if: matrix.os != 'windows-latest'
+        run: |
+          if [[ "${{ matrix.os }}" == "macos-13" ]]; then
+            python make_wheels.py --version latest --outdir . --platform x86_64-macos
+          elif [[ "${{ matrix.os }}" == "macos-14" ]]; then
+            python make_wheels.py --version latest --outdir . --platform aarch64-macos
+          elif [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            python make_wheels.py --version latest --outdir . --platform x86_64-linux --platform x86-linux --platform aarch64-linux --platform armv7a-linux
+          fi
+
+      - name: Run build command for Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          python make_wheels.py --version latest --outdir . --platform x86_64-windows --platform x86-windows
+
+      - name: Repair wheels for Linux and macOS
+        if: matrix.os != 'windows-latest'
+        run: |
+          if [[ "${{ matrix.os }}" == "macos-13" || "${{ matrix.os }}" == "macos-14" ]]; then
+            python -m pip install delocate
+            delocate-listdeps *.whl && delocate-wheel -v *.whl
+            echo "Listing wheels"
+            ls -l *.whl
+          elif [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            python -m pip install auditwheel
+            auditwheel repair *.whl -w wheelhouse
+            echo "Listing wheels"
+            ls -l wheelhouse
+          fi
+
+      - name: Repair wheels for Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+            python -m pip install delvewheel
+            delvewheel repair -v ziglang-0.12.0-py3-none-win32.whl -w wheelhouse
+            delvewheel repair -v ziglang-0.12.0-py3-none-win_amd64.whl -w wheelhouse
+            Get-ChildItem -Path wheelhouse

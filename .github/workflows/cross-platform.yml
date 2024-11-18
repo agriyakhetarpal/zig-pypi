@@ -1,0 +1,45 @@
+name: Test wheel generation
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+
+      - name: Install dependencies
+        run: python -m pip install pdm
+
+      - name: Test wheel generation
+        run: pdm run make_wheels.py
+
+      - name: Print checksums (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          for wheel in dist/*.whl; do
+            echo "$(shasum --algorithm 256 $wheel)"
+          done
+
+      - name: Print checksums (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path dist -Filter *.whl | ForEach-Object {
+            $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256
+            Write-Output "$($_.FullName): $($hash.Hash)"
+          }
